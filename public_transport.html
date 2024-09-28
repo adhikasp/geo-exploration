@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Peta Rute Transportasi Umum Jakarta</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <style>
+        #map { height: 100vh; width: 100%; }
+    </style>
+</head>
+<body>
+    <div id="map-title" style="position: absolute; top: 10px; left: 50px; z-index: 1000; background-color: white; padding: 10px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <h1 style="margin: 0; font-size: 24px;">Peta Rute Transportasi Umum Jakarta</h1>
+        <p style="margin: 10px 0 0 0; font-size: 14px;">This map shows the public transport routes in Jakarta. Use the layer control to toggle different routes on and off.</p>
+    </div>
+    <div id="map"></div>
+    <script>
+        // Create a map centered on Jakarta
+        var map = L.map('map').setView([-6.2088, 106.8456], 11);
+
+        // Add CartoDB Positron tiles
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 20
+        }).addTo(map);
+
+        // Load data from overpass_cache.json
+        fetch('overpass_cache.json')
+            .then(response => response.json())
+            .then(data => {
+                // Create a layer group for each relation
+                var layerGroups = {};
+
+                // Iterate through the relations (routes) in the data
+                data.elements.forEach(element => {
+                    if (element.type === 'relation') {
+                        var relationId = element.id;
+                        var routeName = element.tags?.name || `Unnamed route ${relationId}`;
+                        // Generate a unique color for this relation
+                        var color = `#${Math.abs(hashCode(routeName)).toString(16).padStart(6, '0')}`;
+
+                        // Create a new layer group for this relation if it doesn't exist
+                        if (!layerGroups[relationId]) {
+                            layerGroups[relationId] = L.layerGroup().addTo(map);
+                        }
+
+                        // Collect all coordinates for this route
+                        var coordinates = [];
+                        element.members.forEach(member => {
+                            if (member.type === 'way' && member.geometry) {
+                                member.geometry.forEach(point => {
+                                    if (coordinates.length === 0 || haversine(coordinates[coordinates.length - 1], [point.lat, point.lon]) < 3) {
+                                        coordinates.push([point.lat, point.lon]);
+                                    }
+                                });
+                            }
+                        });
+
+                        // Apply a small offset to the coordinates
+                        var offset = 0.000005 * (relationId % 10 - 5);
+                        var offsetCoordinates = coordinates.map(coord => [coord[0] + offset, coord[1] + offset]);
+
+                        // Draw the route on the map
+                        L.polyline(offsetCoordinates, {
+                            color: color,
+                            weight: 5,
+                            opacity: 0.8
+                        }).bindTooltip(routeName).addTo(layerGroups[relationId]);
+                    }
+                });
+
+                // Add layer control to toggle routes on/off
+                var overlayMaps = Object.fromEntries(
+                    Object.entries(layerGroups)
+                        .map(([id, layer]) => [layer.getLayers()[0].getTooltip().getContent(), layer])
+                        .sort((a, b) => a[0].localeCompare(b[0]))
+                );
+                L.control.layers(null, overlayMaps).addTo(map);
+            });
+
+        // Simple hash function for string
+        function hashCode(str) {
+            let seed = 0;
+            for (let i = 0; i < str.length; i++) {
+                seed = (seed * 31 + str.charCodeAt(i)) & 0xFFFFFFFF;
+            }
+            
+            // Simple random number generator using the seed
+            function seededRandom() {
+                seed = (seed * 1664525 + 1013904223) & 0xFFFFFFFF;
+                return seed / 0xFFFFFFFF;
+            }
+            
+            // Generate a random integer between 0 and 16777215 (0xFFFFFF)
+            return Math.floor(seededRandom() * 16777216);
+        }
+
+        // Haversine formula to calculate distance between two points
+        function haversine(coord1, coord2) {
+            function toRad(x) {
+                return x * Math.PI / 180;
+            }
+
+            var lat1 = coord1[0];
+            var lon1 = coord1[1];
+            var lat2 = coord2[0];
+            var lon2 = coord2[1];
+
+            var R = 6371; // km
+
+            var x1 = lat2 - lat1;
+            var dLat = toRad(x1);
+            var x2 = lon2 - lon1;
+            var dLon = toRad(x2);
+            var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            var d = R * c;
+
+            return d;
+        }
+    </script>
+</body>
+</html>
