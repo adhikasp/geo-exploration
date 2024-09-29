@@ -1,0 +1,3 @@
+*.graphml
+*.json
+__pycache__
